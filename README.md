@@ -3,6 +3,10 @@
 Claude と ChatGPT（Codex）の使用量（5 時間枠・週間枠）をタスクトレイに表示する常駐アプリです。
 トレイアイコンの数字は 5 時間枠の使用率です。詳細は [docs/SPEC.md](docs/SPEC.md) を参照してください。
 
+## 別の Windows PC に入れる
+Claude Code に [SETUP_PROMPT_WINDOWS.md](SETUP_PROMPT_WINDOWS.md) の文章を貼り付けて送ると、
+前提ツール（git・.NET 8 SDK）、共通指示（claude-config）、このアプリの導入までを自動で行います。
+
 ## 必要なもの
 - Windows 10/11（WebView2 ランタイム。Windows 11 は標準搭載）
 - .NET 8 SDK（ビルド時）/ .NET 8 Desktop Runtime（実行時。SDK に同梱）
