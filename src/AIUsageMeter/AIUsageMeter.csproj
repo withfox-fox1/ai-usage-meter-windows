@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>AIUsageMeter</AssemblyName>
+    <RootNamespace>AIUsageMeter</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>AI Usage Meter</Product>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AIUsageMeter.Core\AIUsageMeter.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    WebView2 パッケージは WinForms プロジェクトにも WPF 版アセンブリを無条件で参照させ、
+    WindowsBase のバージョン競合警告 (MSB3277) を出す。WPF は使わないため参照から外す。
+  -->
+  <Target Name="ExcludeWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
+</Project>
