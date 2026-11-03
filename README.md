@@ -40,6 +40,7 @@ Start-Process "$env:LOCALAPPDATA\Programs\AIUsageMeter\AIUsageMeter.exe"
 ## アンインストール
 ```powershell
 Get-Process AIUsageMeter -ErrorAction SilentlyContinue | Stop-Process
+schtasks /Delete /TN "AIUsageMeter_$env:USERNAME" /F
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name AIUsageMeter -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\AIUsageMeter"
 # 設定・履歴・ログイン状態も消す場合
@@ -50,7 +51,7 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\AIUsageMeter"
 | 操作 | 内容 |
 |---|---|
 | 左クリック | 詳細パネル（5 時間・週間のバー、リセットまでの時間、直近 24 時間の推移） |
-| 右クリック | 今すぐ更新／ログイン…／組織の選択（Claude）／このアイコンを隠す／ログオン時に起動／終了 |
+| 右クリック | 今すぐ更新／ログイン…／別のアカウントでログイン…（Claude）／組織の選択（Claude）／このアイコンを隠す／ログオン時に起動／終了 |
 
 設定ファイル `%LOCALAPPDATA%\AIUsageMeter\settings.json` の `RefreshIntervalMinutes`（既定 5）と
 `RequestTimeoutSeconds`（既定 30）は手動で変更できます（アプリ再起動後に反映）。

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AIUsageMeter.Core;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -54,6 +55,20 @@ internal sealed class ServiceBrowser : Form
         && Uri.Compare(current, uri, UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
 
     public void Navigate(Uri uri) => Core.Navigate(uri.AbsoluteUri);
+
+    /// <summary>このサービスの Cookie だけを削除する。プロファイルは他サービスと共有のため全消去しない。</summary>
+    public async Task<int> DeleteServiceCookiesAsync()
+    {
+        var manager = Core.CookieManager;
+        var cookies = await manager.GetCookiesAsync(null);
+        var targets = cookies.Where(c => CookieDomain.BelongsTo(c.Domain, _host)).ToList();
+        foreach (var cookie in targets)
+        {
+            manager.DeleteCookie(cookie);
+        }
+
+        return targets.Count;
+    }
 
     /// <summary>
     /// 遷移完了を待つ。HTTP エラーページでも完了扱いにし、判定はページ内 fetch の結果に任せる。

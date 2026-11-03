@@ -47,7 +47,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         else
         {
-            AutoStart.RefreshPathIfEnabled();
+            _ = Task.Run(AutoStart.RefreshIfEnabled); // schtasks の完了を待って表示を遅らせない
         }
 
         _refreshTimer.Interval = (int)TimeSpan.FromMinutes(_settings.RefreshIntervalMinutes).TotalMilliseconds;
@@ -266,6 +266,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         if (service.Kind == ServiceKind.Claude)
         {
+            menu.Items.Add("別のアカウントでログイン…", null, async (_, _) => await SwitchClaudeAccountAsync(service));
             var organizations = new ToolStripMenuItem("組織の選択");
             var active = _claudeFetcher.ActiveOrganization?.Uuid;
             foreach (var organization in _claudeFetcher.Organizations)
@@ -299,6 +300,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(autoStart);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("終了", null, (_, _) => ExitApplication());
+    }
+
+    private async Task SwitchClaudeAccountAsync(ServiceController service)
+    {
+        var answer = MessageBox.Show(
+            "このアプリの Claude アカウントからログアウトし、ログイン画面を開きます。\nブラウザなど他の場所のログインには影響しません。",
+            "AI Usage Meter",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.OK || !await service.SignOutAsync())
+        {
+            return;
+        }
+
+        // 前のアカウントの選択・通知状態・履歴を新しいアカウントに持ち越さない。
+        _claudeFetcher.ClearOrganizations();
+        _settings.ClaudeOrganizationId = null;
+        foreach (var key in _settings.NotificationStates.Keys.Where(k => k.StartsWith($"{service.Kind}.", StringComparison.Ordinal)).ToList())
+        {
+            _settings.NotificationStates.Remove(key);
+        }
+
+        _settings.Save();
+        _history.Points.RemoveAll(p => p.Service == service.Kind);
+        JsonFile.Save(AppPaths.HistoryFile, _history);
+        service.OpenLogin();
     }
 
     private void SetHidden(ServiceKind? kind)

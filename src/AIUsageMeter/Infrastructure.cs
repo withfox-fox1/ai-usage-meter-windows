@@ -1,6 +1,11 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security;
+using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AIUsageMeter.Core;
 using Microsoft.Win32;
 
 namespace AIUsageMeter;
@@ -94,32 +99,58 @@ internal static class JsonFile
     }
 }
 
-/// <summary>HKCU の Run キーによるログオン時起動。</summary>
+/// <summary>
+/// ログオン時起動。Windows が順番に処理する Run キーでは起動が数分遅れることがあるため、
+/// タスク スケジューラのログオン トリガーを使う。登録できない環境では Run キーで代替する。
+/// </summary>
 internal static class AutoStart
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "AIUsageMeter";
+    private const int SchtasksTimeoutMilliseconds = 15_000;
 
-    private static string Command => $"\"{Environment.ProcessPath}\"";
+    /// <summary>タスクはコンピューター単位で登録されるため、ユーザーごとに名前を分ける。</summary>
+    private static string TaskName => $"AIUsageMeter_{Environment.UserName}";
+
+    private static string ExecutablePath => Environment.ProcessPath!;
+
+    private static string RunKeyCommand => $"\"{ExecutablePath}\"";
 
     public static bool IsEnabled()
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
-        return key?.GetValue(ValueName) is string;
+        try
+        {
+            return ReadRunKey() is not null || TaskExists();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("自動起動の状態確認に失敗", ex);
+            return false;
+        }
     }
 
     public static void SetEnabled(bool enabled)
     {
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
-            if (enabled)
+            if (!enabled)
             {
-                key.SetValue(ValueName, Command);
+                if (TaskExists())
+                {
+                    RunSchtasks("/Delete", "/TN", TaskName, "/F");
+                }
+
+                DeleteRunKey();
+            }
+            else if (RegisterTask())
+            {
+                DeleteRunKey();
             }
             else
             {
-                key.DeleteValue(ValueName, throwOnMissingValue: false);
+                using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
+                key.SetValue(ValueName, RunKeyCommand);
+                Log.Info("タスクを登録できなかったため Run キーで自動起動します");
             }
         }
         catch (Exception ex)
@@ -128,14 +159,110 @@ internal static class AutoStart
         }
     }
 
-    /// <summary>有効なのに実行ファイルの場所が変わっていたら登録を更新する。</summary>
-    public static void RefreshPathIfEnabled()
+    /// <summary>
+    /// 自動起動が有効なときだけ登録を最新にする：Run キーからタスクへの移行と、実行ファイルの場所の変更。
+    /// 無効にされている場合は何もしない。
+    /// </summary>
+    public static void RefreshIfEnabled()
+    {
+        try
+        {
+            var runKey = ReadRunKey();
+            var (exitCode, definition) = RunSchtasks("/Query", "/TN", TaskName, "/XML");
+            var taskExists = exitCode == 0;
+            if (!taskExists && runKey is null)
+            {
+                return;
+            }
+
+            // 文字コードの違いで一致しない場合は再登録になるだけで、害はない。
+            var taskIsCurrent = taskExists
+                && definition.Contains($"<Command>{SecurityElement.Escape(ExecutablePath)}</Command>", StringComparison.OrdinalIgnoreCase);
+            if (taskIsCurrent && runKey is null)
+            {
+                return;
+            }
+
+            if (taskIsCurrent)
+            {
+                DeleteRunKey();
+            }
+            else
+            {
+                SetEnabled(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("自動起動の更新に失敗", ex);
+        }
+    }
+
+    private static bool TaskExists() => RunSchtasks("/Query", "/TN", TaskName).ExitCode == 0;
+
+    private static bool RegisterTask()
+    {
+        var xmlPath = Path.Combine(Path.GetTempPath(), $"AIUsageMeter-{Guid.NewGuid():N}.xml");
+        try
+        {
+            var user = WindowsIdentity.GetCurrent().Name;
+            var xml = LogonTaskXml.Build(ExecutablePath, Path.GetDirectoryName(ExecutablePath)!, user);
+            File.WriteAllText(xmlPath, xml, Encoding.Unicode);
+            var (exitCode, output) = RunSchtasks("/Create", "/TN", TaskName, "/XML", xmlPath, "/F");
+            if (exitCode != 0)
+            {
+                Log.Info($"タスクの登録に失敗 (schtasks 終了コード {exitCode}): {output.Trim()}");
+            }
+
+            return exitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("タスクの登録に失敗", ex);
+            return false;
+        }
+        finally
+        {
+            File.Delete(xmlPath);
+        }
+    }
+
+    private static (int ExitCode, string Output) RunSchtasks(params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(SchtasksTimeoutMilliseconds))
+        {
+            process.Kill();
+            throw new TimeoutException($"schtasks が {SchtasksTimeoutMilliseconds / 1000} 秒以内に終了しませんでした");
+        }
+
+        return (process.ExitCode, output.Result + error.Result);
+    }
+
+    private static string? ReadRunKey()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
-        if (key?.GetValue(ValueName) is string current && !string.Equals(current, Command, StringComparison.OrdinalIgnoreCase))
-        {
-            SetEnabled(true);
-        }
+        return key?.GetValue(ValueName) as string;
+    }
+
+    private static void DeleteRunKey()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+        key?.DeleteValue(ValueName, throwOnMissingValue: false);
     }
 }
 

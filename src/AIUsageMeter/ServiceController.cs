@@ -114,6 +114,48 @@ internal sealed class ServiceController : IDisposable
         }
     }
 
+    /// <summary>このサービスの Cookie を削除し、表示を要ログインに戻す。成功したら true。</summary>
+    public async Task<bool> SignOutAsync()
+    {
+        if (_environment is null)
+        {
+            return false;
+        }
+
+        // 実行中の取得の応答で Cookie が再設定されないよう、取得の完了を待ってから削除する。
+        try
+        {
+            await _fetchLock.WaitAsync(_shutdown);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+
+        try
+        {
+            await Browser.EnsureInitializedAsync(_environment);
+            _loginPoll.Stop();
+            Browser.Hide();
+            var deleted = await Browser.DeleteServiceCookiesAsync();
+            Log.Info($"{Definition.DisplayName}: ログアウトしました（Cookie {deleted} 件を削除）");
+            Data = null;
+            LastUpdated = null;
+            Apply(FetchOutcome.LoginRequired());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"{Definition.DisplayName}: ログアウトに失敗", ex);
+            MessageBox.Show($"ログアウトできませんでした。\n{ex.Message}", "AI Usage Meter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+        finally
+        {
+            _fetchLock.Release();
+        }
+    }
+
     public async void OpenLogin()
     {
         if (_environment is null)

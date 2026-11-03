@@ -23,6 +23,12 @@ internal sealed class ClaudeFetcher(Func<string?> selectedOrganizationId) : IUsa
 
     public ClaudeOrganization? ActiveOrganization { get; private set; }
 
+    public void ClearOrganizations()
+    {
+        Organizations = [];
+        ActiveOrganization = null;
+    }
+
     public async Task<FetchOutcome> FetchAsync(ServiceBrowser browser, CancellationToken cancellationToken)
     {
         var organizations = ClaudeParser.InterpretOrganizations(

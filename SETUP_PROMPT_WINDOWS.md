@@ -52,7 +52,7 @@ foreach ($t in $targets) {
 3. 起動中なら止める：`Get-Process AIUsageMeter -ErrorAction SilentlyContinue | Stop-Process`
 4. 配置：`dotnet publish src\AIUsageMeter\AIUsageMeter.csproj -c Release -r win-x64 --self-contained false -o "$env:LOCALAPPDATA\Programs\AIUsageMeter"`
 5. 起動：`Start-Process "$env:LOCALAPPDATA\Programs\AIUsageMeter\AIUsageMeter.exe"`。数秒後に `%LOCALAPPDATA%\AIUsageMeter\app.log` を見て「起動」と各サービスの状態が出ていることを確認
-6. 自動起動：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` の値 `AIUsageMeter` が今の exe パスになっていることを確認
+6. 自動起動：`schtasks /Query /TN "AIUsageMeter_$env:USERNAME" /XML` の `<Command>` が今の exe パスになっていることを確認。タスクを登録できない環境では `HKCUSoftwareMicrosoftWindowsCurrentVersionRun` の値 `AIUsageMeter` に代替登録されるので、その場合はそちらを確認して私に伝える
 7. トレイ表示：Windows 11 では新しいアイコンが「^」の中に隠れる。`HKCU:\Control Panel\NotifyIconSettings` の各サブキーのうち、`ExecutablePath` が `...\Programs\AIUsageMeter\AIUsageMeter.exe` のもの（2つ）だけ `IsPromoted` を DWORD 1 にする（他アプリのキーは触らない）。できたら画面右下をスクリーンショットで確認し、オレンジの丸（Claude）と緑の六角形（ChatGPT）が出ていることを確認。うまくいかなければ「設定 → 個人用設定 → タスクバー → その他のシステムトレイアイコン」で表示ONにする方法を私に伝える
 8. ログイン：`app.log` で `LoginRequired` になっているサービスがあれば、私に「アイコンを右クリック →『ログイン…』でログインして」と頼んで待つ。ログイン後、`app.log` に `Claude: Ok` / `ChatGPT: Ok` が出ていること、`history.json` に数値が入っていることを確認
 9. 確認できなかった項目は「未確認」と明記する
